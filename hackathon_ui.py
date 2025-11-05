@@ -1,0 +1,265 @@
+import cv2
+from deepface import DeepFace
+import time
+import tkinter as tk
+from tkinter import ttk
+from PIL import Image, ImageTk
+import threading
+from collections import defaultdict
+
+class EmotionDetectionUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Behavior AI")
+        self.root.geometry("1000x700")
+        self.root.configure(bg='#0f1a2b')
+        
+        # Variables
+        self.is_running = False
+        self.cap = None
+        self.current_emotions = []
+        self.face_count = 0
+        self.engagement_score = 0
+        self.emotion_stats = defaultdict(int)
+        self.analysis_count = 0
+        
+        self.setup_ui()
+        
+    def setup_ui(self):
+        # Header
+        header_frame = tk.Frame(self.root, bg='#0f1a2b', height=80)
+        header_frame.pack(fill=tk.X, padx=20, pady=10)
+        header_frame.pack_propagate(False)
+        
+        title_label = tk.Label(header_frame, text="🧠 BEHAVIOR AI", 
+                              font=("Arial", 24, "bold"), 
+                              fg="white", bg='#0f1a2b')
+        title_label.pack(side=tk.LEFT)
+        
+        self.status_label = tk.Label(header_frame, text="Ready", 
+                                    font=("Arial", 12), 
+                                    fg="#00ff88", bg='#0f1a2b')
+        self.status_label.pack(side=tk.LEFT, padx=20)
+        
+        # Control buttons
+        control_frame = tk.Frame(header_frame, bg='#0f1a2b')
+        control_frame.pack(side=tk.RIGHT)
+        
+        self.start_btn = tk.Button(control_frame, text="⏺️ Start Recording", 
+                                  command=self.start_detection,
+                                  font=("Arial", 10, "bold"),
+                                  bg="#00ff88", fg="black",
+                                  relief="flat", padx=15, pady=5)
+        self.start_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Main content
+        main_frame = tk.Frame(self.root, bg='#0f1a2b')
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        
+        # Camera feed frame
+        cam_frame = tk.LabelFrame(main_frame, text="Live Camera Feed", 
+                                 font=("Arial", 12, "bold"),
+                                 fg="white", bg='#0f1a2b',
+                                 bd=2, relief="groove")
+        cam_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
+        
+        self.cam_label = tk.Label(cam_frame, text="Camera will start when recording begins...", 
+                                 bg="black", fg="white", font=("Arial", 12))
+        self.cam_label.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+        
+        # Analytics frame
+        analytics_frame = tk.Frame(main_frame, bg='#0f1a2b')
+        analytics_frame.pack(fill=tk.X, pady=10)
+        
+        # Emotion metrics
+        metrics_frame = tk.Frame(analytics_frame, bg='#0f1a2b')
+        metrics_frame.pack(fill=tk.X)
+        
+        tk.Label(metrics_frame, text="LIVE ANALYTICS", 
+                font=("Arial", 14, "bold"), fg="white", bg='#0f1a2b').pack(anchor="w")
+        
+        # Emotion cards
+        emotions_card_frame = tk.Frame(metrics_frame, bg='#0f1a2b')
+        emotions_card_frame.pack(fill=tk.X, pady=10)
+        
+        self.emotion_cards = {}
+        emotions = [('😊', 'Happy'), ('😐', 'Neutral'), ('😠', 'Angry'), ('😲', 'Surprise')]
+        
+        for i, (emoji, emotion) in enumerate(emotions):
+            card = tk.Frame(emotions_card_frame, bg='#1e2a3d', relief='raised', bd=1)
+            card.pack(side=tk.LEFT, padx=10, ipadx=15, ipady=10)
+            
+            emoji_label = tk.Label(card, text=emoji, font=("Arial", 20), 
+                                  bg='#1e2a3d', fg="white")
+            emoji_label.pack()
+            
+            value_label = tk.Label(card, text="0%", font=("Arial", 16, "bold"), 
+                                  bg='#1e2a3d', fg="#00ff88")
+            value_label.pack()
+            
+            name_label = tk.Label(card, text=emotion, font=("Arial", 10), 
+                                 bg='#1e2a3d', fg="white")
+            name_label.pack()
+            
+            self.emotion_cards[emotion.lower()] = value_label
+        
+        # Engagement and face count
+        stats_frame = tk.Frame(metrics_frame, bg='#0f1a2b')
+        stats_frame.pack(fill=tk.X, pady=15)
+        
+        # Engagement score
+        engagement_frame = tk.Frame(stats_frame, bg='#0f1a2b')
+        engagement_frame.pack(side=tk.LEFT, padx=20)
+        
+        tk.Label(engagement_frame, text="ENGAGEMENT:", 
+                font=("Arial", 12, "bold"), fg="white", bg='#0f1a2b').pack(anchor="w")
+        
+        self.engagement_label = tk.Label(engagement_frame, text="0%", 
+                                       font=("Arial", 24, "bold"), 
+                                       fg="#00ff88", bg='#0f1a2b')
+        self.engagement_label.pack(anchor="w")
+        
+        # Face count
+        faces_frame = tk.Frame(stats_frame, bg='#0f1a2b')
+        faces_frame.pack(side=tk.LEFT, padx=40)
+        
+        tk.Label(faces_frame, text="FACES DETECTED:", 
+                font=("Arial", 12, "bold"), fg="white", bg='#0f1a2b').pack(anchor="w")
+        
+        self.faces_label = tk.Label(faces_frame, text="0", 
+                                  font=("Arial", 24, "bold"), 
+                                  fg="#00ff88", bg='#0f1a2b')
+        self.faces_label.pack(anchor="w")
+        
+    def start_detection(self):
+        if not self.is_running:
+            self.is_running = True
+            self.start_btn.config(text="⏹️ Stop Recording", bg="#ff4444")
+            self.status_label.config(text="Recording...")
+            
+            # Start camera thread
+            self.camera_thread = threading.Thread(target=self.run_camera)
+            self.camera_thread.daemon = True
+            self.camera_thread.start()
+        else:
+            self.stop_detection()
+    
+    def stop_detection(self):
+        self.is_running = False
+        self.start_btn.config(text="⏺️ Start Recording", bg="#00ff88")
+        self.status_label.config(text="Ready")
+        if self.cap:
+            self.cap.release()
+    
+    def run_camera(self):
+        self.cap = cv2.VideoCapture(0)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        
+        last_analysis = 0
+        analysis_interval = 2  # Analyze every 2 seconds
+        
+        while self.is_running:
+            ret, frame = self.cap.read()
+            if not ret:
+                break
+            
+            current_time = time.time()
+            
+            # Analyze emotions periodically
+            if current_time - last_analysis > analysis_interval:
+                try:
+                    analysis = DeepFace.analyze(
+                        frame, 
+                        actions=['emotion'], 
+                        enforce_detection=False,
+                        detector_backend='opencv'
+                    )
+                    self.current_emotions = analysis
+                    self.update_analytics(analysis)
+                    last_analysis = current_time
+                except Exception as e:
+                    self.current_emotions = []
+            
+            # Draw bounding boxes and labels
+            display_frame = self.draw_detections(frame.copy())
+            
+            # Convert to PhotoImage
+            rgb_frame = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
+            img = Image.fromarray(rgb_frame)
+            img_tk = ImageTk.PhotoImage(image=img)
+            
+            self.cam_label.config(image=img_tk)
+            self.cam_label.image = img_tk
+            
+        if self.cap:
+            self.cap.release()
+    
+    def draw_detections(self, frame):
+        self.face_count = 0
+        total_engagement = 0
+        
+        for face in self.current_emotions:
+            try:
+                x = face['region']['x']
+                y = face['region']['y']
+                w = face['region']['w']
+                h = face['region']['h']
+                
+                emotions = face['emotion']
+                dominant_emotion = max(emotions.items(), key=lambda x: x[1])[0]
+                emotion_score = emotions[dominant_emotion]
+                
+                # Draw green bounding box
+                cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 3)
+                
+                # Draw emotion label
+                label = f"{dominant_emotion.upper()} ({emotion_score:.0f}%)"
+                cv2.putText(frame, label, (x, y-10), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+                
+                self.face_count += 1
+                
+                # Calculate engagement (positive emotions contribute more)
+                engagement_weights = {'happy': 1.0, 'surprise': 0.7, 'neutral': 0.3, 
+                                    'sad': 0.1, 'angry': 0.1, 'fear': 0.1, 'disgust': 0.1}
+                engagement = emotions.get(dominant_emotion, 0) * engagement_weights.get(dominant_emotion, 0.3)
+                total_engagement += engagement
+                
+            except Exception as e:
+                continue
+        
+        # Update face count
+        self.faces_label.config(text=str(self.face_count))
+        
+        # Calculate average engagement
+        if self.face_count > 0:
+            self.engagement_score = total_engagement / self.face_count
+        else:
+            self.engagement_score = 0
+            
+        self.engagement_label.config(text=f"{self.engagement_score:.0f}%")
+        
+        return frame
+    
+    def update_analytics(self, analysis):
+        emotion_totals = defaultdict(float)
+        total_faces = len(analysis)
+        
+        for face in analysis:
+            emotions = face['emotion']
+            for emotion, score in emotions.items():
+                emotion_totals[emotion] += score
+        
+        # Update emotion cards
+        for emotion, card in self.emotion_cards.items():
+            if total_faces > 0:
+                avg_score = emotion_totals.get(emotion, 0) / total_faces
+                card.config(text=f"{avg_score:.0f}%")
+            else:
+                card.config(text="0%")
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = EmotionDetectionUI(root)
+    root.mainloop()
