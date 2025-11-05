@@ -1,0 +1,14 @@
+opencv-python==4.8.1.78
+customtkinter==5.2.2
+pillow==10.0.1
+deepface==0.0.79
+tensorflow==2.13.0
+keras==2.13.1
+numpy==1.24.3
+pandas==2.0.3
+gdown==4.7.1
+tqdm==4.65.0
+retina-face==0.0.14
+matplotlib==3.7.2
+seaborn==0.12.2
+openpyxl==3.1.2
